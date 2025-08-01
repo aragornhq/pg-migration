@@ -13,6 +13,8 @@
 - ✅ SHA-256 hash tracking for applied migrations
 - ✅ Enforced one-statement-per-file (recommended)
 - ✅ Optional config via `pg-migration.json`
+- ✅ Migrations run inside a single transaction for atomicity
+- ✅ `schema:dump` command to export an existing database schema
 
 ---
 
@@ -58,6 +60,7 @@ npx pg-migrate <command> [options]
 - `migration:create <name> --path=<folder>` – create a timestamped migration file. The `--path` option is optional when the path is defined in `pg-migration.json`.
 - `migration:up --path=<folder>` – apply all pending migrations.
 - `migration:down --file=<filename.sql> --path=<folder>` – roll back a single migration.
+- `schema:dump --output=schema.sql` – export the current database schema using `pg_dump`.
 
 Each file should contain your SQL up statement followed by `-- ROLLBACK BELOW --` and the down statement. Only one SQL statement per section is enforced.
 

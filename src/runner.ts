@@ -23,11 +23,11 @@ export class Runner {
     await this.ensureTable();
     const applied = await this.getApplied();
     const files = getMigrationFiles(this.migrationsDir);
-    const appliedThisRun: any[] = [];
 
-    for (const file of files) {
-      if (!applied.has(file.filename)) {
-        try {
+    await postgres.query('BEGIN');
+    try {
+      for (const file of files) {
+        if (!applied.has(file.filename)) {
           console.log(`🚀 Applying ${file.filename}...`);
 
           if ((file.upSql.match(/;/g) || []).length > 1) {
@@ -42,30 +42,18 @@ export class Runner {
             'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
             [file.filename, file.hash],
           );
-
-          appliedThisRun.push(file);
-        } catch (err) {
-          console.error(`❌ Error applying ${file.filename}, rolling back...`);
-
-          for (const rollback of appliedThisRun.reverse()) {
-            if (rollback.downSql) {
-              try {
-                console.log(`↩️ Rolling back ${rollback.filename}...`);
-                await postgres.query(rollback.downSql);
-              } catch {
-                console.warn(`⚠️ Failed rollback for ${rollback.filename}`);
-              }
-            }
-          }
-
-          throw err;
+        } else if (applied.get(file.filename) !== file.hash) {
+          throw new Error(`❌ Hash mismatch: ${file.filename}`);
         }
-      } else if (applied.get(file.filename) !== file.hash) {
-        throw new Error(`❌ Hash mismatch: ${file.filename}`);
       }
-    }
 
-    console.log('✅ All migrations applied successfully.');
+      await postgres.query('COMMIT');
+      console.log('✅ All migrations applied successfully.');
+    } catch (err) {
+      await postgres.query('ROLLBACK');
+      console.error('❌ Migration run failed, rolled back.');
+      throw err;
+    }
   }
 
   async rollbackMigration(filename: string) {
