@@ -59,6 +59,7 @@ npx pg-migrate <command> [options]
 
 - `migration:create <name> --path=<folder>` – create a timestamped migration file. The `--path` option is optional when the path is defined in `pg-migration.json`.
 - `migration:up --path=<folder>` – apply all pending migrations.
+- `migration:dry-run --path=<folder>` – run migrations in a transaction and roll back for validation.
 - `migration:down --file=<filename.sql> --path=<folder>` – roll back a single migration.
 - `schema:dump --output=schema.sql` – export the current database schema using `pg_dump`.
 
