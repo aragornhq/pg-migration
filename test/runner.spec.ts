@@ -9,6 +9,9 @@ jest.mock('../src/client', () => {
   return {
     postgres: {
       query: jest.fn((text: string, params?: any[]) => {
+        if (text.startsWith('BEGIN') || text.startsWith('COMMIT') || text.startsWith('ROLLBACK')) {
+          return Promise.resolve();
+        }
         if (text.startsWith('SELECT')) {
           return Promise.resolve({ rows: [...data] });
         }
@@ -45,6 +48,10 @@ describe('Migration Runner', () => {
     expectedHash = crypto.createHash('sha256').update(raw).digest('hex');
   });
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   afterAll(() => {
     const file = path.join(testDir, '20250101_test.sql');
     fs.unlinkSync(file);
@@ -53,10 +60,12 @@ describe('Migration Runner', () => {
 
   it('applies migrations', async () => {
     await expect(runner.applyMigrations()).resolves.not.toThrow();
+    expect(postgres.query).toHaveBeenCalledWith('BEGIN');
     expect(postgres.query).toHaveBeenCalledWith(
       'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
       ['20250101_test.sql', expectedHash]
     );
+    expect(postgres.query).toHaveBeenCalledWith('COMMIT');
   });
 
   it('rolls back migration', async () => {

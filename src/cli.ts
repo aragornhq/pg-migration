@@ -9,6 +9,7 @@ const command = args[0];
 const name = args[1];
 const pathArg = args.find((arg) => arg.startsWith('--path='));
 const fileArg = args.find((arg) => arg.startsWith('--file='));
+const outputArg = args.find((arg) => arg.startsWith('--output='));
 
 const configPath = path.resolve(process.cwd(), 'pg-migration.json');
 const config = fs.existsSync(configPath)
@@ -48,9 +49,39 @@ const runner = new Runner(folderPath);
       const filename = fileArg?.split('=')[1];
       if (!filename) throw new Error('--file=<filename> is required');
       await runner.rollbackMigration(filename);
+    } else if (command === 'schema:dump') {
+      const output = outputArg?.split('=')[1] || 'schema.sql';
+      const { spawnSync } = await import('child_process');
+      const result = spawnSync(
+        'pg_dump',
+        [
+          '--schema-only',
+          '--no-owner',
+          '--no-privileges',
+          '-h',
+          process.env.PG_HOST || 'localhost',
+          '-p',
+          process.env.PG_PORT || '5432',
+          '-U',
+          process.env.PG_USER || 'postgres',
+          '-d',
+          process.env.PG_DB || 'postgres',
+          '-f',
+          output,
+        ],
+        {
+          stdio: 'inherit',
+          env: { ...process.env, PGPASSWORD: process.env.PG_PASSWORD || '' },
+        },
+      );
+
+      if (result.status !== 0) {
+        throw new Error('pg_dump failed');
+      }
+      console.log(`Schema dumped to ${output}`);
     } else {
       console.log(
-        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:down --file=filename.sql --path=./migrations',
+        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:down --file=filename.sql --path=./migrations\n  schema:dump --output=schema.sql',
       );
     }
   } catch (err) {
