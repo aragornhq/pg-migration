@@ -56,6 +56,43 @@ export class Runner {
     }
   }
 
+  async dryRunMigrations() {
+    await postgres.query('BEGIN');
+    try {
+      await this.ensureTable();
+      const applied = await this.getApplied();
+      const files = getMigrationFiles(this.migrationsDir);
+
+      for (const file of files) {
+        if (!applied.has(file.filename)) {
+          console.log(`🧪 Testing ${file.filename}...`);
+
+          if ((file.upSql.match(/;/g) || []).length > 1) {
+            throw new Error(
+              `❌ Migration ${file.filename} may contain multiple SQL statements. Use 1 per file.`,
+            );
+          }
+
+          await postgres.query(file.upSql);
+
+          await postgres.query(
+            'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
+            [file.filename, file.hash],
+          );
+        } else if (applied.get(file.filename) !== file.hash) {
+          throw new Error(`❌ Hash mismatch: ${file.filename}`);
+        }
+      }
+
+      await postgres.query('ROLLBACK');
+      console.log('✅ Dry run completed successfully.');
+    } catch (err) {
+      await postgres.query('ROLLBACK');
+      console.error('❌ Dry run failed, rolled back.');
+      throw err;
+    }
+  }
+
   async rollbackMigration(filename: string) {
     await this.ensureTable();
     const files = getMigrationFiles(this.migrationsDir);

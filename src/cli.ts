@@ -45,6 +45,8 @@ const runner = new Runner(folderPath);
       console.log(`Created migration: ${filePath}`);
     } else if (command === 'migration:up') {
       await runner.applyMigrations();
+    } else if (command === 'migration:dry-run') {
+      await runner.dryRunMigrations();
     } else if (command === 'migration:down') {
       const filename = fileArg?.split('=')[1];
       if (!filename) throw new Error('--file=<filename> is required');
@@ -81,7 +83,7 @@ const runner = new Runner(folderPath);
       console.log(`Schema dumped to ${output}`);
     } else {
       console.log(
-        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:down --file=filename.sql --path=./migrations\n  schema:dump --output=schema.sql',
+        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:dry-run --path=./migrations\n  migration:down --file=filename.sql --path=./migrations\n  schema:dump --output=schema.sql',
       );
     }
   } catch (err) {

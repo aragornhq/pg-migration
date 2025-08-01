@@ -75,4 +75,10 @@ describe('Migration Runner', () => {
       ['20250101_test.sql']
     );
   });
+
+  it('dry runs migrations', async () => {
+    await expect(runner.dryRunMigrations()).resolves.not.toThrow();
+    expect(postgres.query).toHaveBeenCalledWith('BEGIN');
+    expect(postgres.query).toHaveBeenCalledWith('ROLLBACK');
+  });
 });
