@@ -80,6 +80,28 @@ const runner = new Runner(folderPath);
       if (result.status !== 0) {
         throw new Error('pg_dump failed');
       }
+
+      let sql = fs.readFileSync(output, 'utf8');
+      const replacements: [RegExp, string][] = [
+        [/^CREATE TABLE /gm, 'CREATE TABLE IF NOT EXISTS '],
+        [/^CREATE SEQUENCE /gm, 'CREATE SEQUENCE IF NOT EXISTS '],
+        [/^CREATE UNIQUE INDEX /gm, 'CREATE UNIQUE INDEX IF NOT EXISTS '],
+        [/^CREATE INDEX /gm, 'CREATE INDEX IF NOT EXISTS '],
+        [/^CREATE VIEW /gm, 'CREATE OR REPLACE VIEW '],
+        [/^CREATE FUNCTION /gm, 'CREATE OR REPLACE FUNCTION '],
+        [/^CREATE PROCEDURE /gm, 'CREATE OR REPLACE PROCEDURE '],
+        [/^CREATE TYPE /gm, 'CREATE TYPE IF NOT EXISTS '],
+        [/^CREATE SCHEMA /gm, 'CREATE SCHEMA IF NOT EXISTS '],
+      ];
+      for (const [pattern, replacement] of replacements) {
+        sql = sql.replace(pattern, replacement);
+      }
+      sql = sql.replace(
+        /CREATE TRIGGER[^;]+;/g,
+        (m) =>
+          `DO $$ BEGIN\n${m}\nEXCEPTION WHEN duplicate_object THEN NULL;\nEND $$;`,
+      );
+      fs.writeFileSync(output, sql);
       console.log(`Schema dumped to ${output}`);
     } else {
       console.log(

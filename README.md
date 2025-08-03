@@ -14,7 +14,7 @@
 - ✅ Enforced one-statement-per-file (recommended)
 - ✅ Optional config via `pg-migration.json`
 - ✅ Migrations run inside a single transaction for atomicity
-- ✅ `schema:dump` command to export an existing database schema
+- ✅ `schema:dump` command to export an existing database schema with rerunnable output
 
 ---
 
@@ -61,7 +61,7 @@ npx pg-migrate <command> [options]
 - `migration:up --path=<folder>` – apply all pending migrations.
 - `migration:dry-run --path=<folder>` – run migrations in a transaction and roll back for validation.
 - `migration:down --file=<filename.sql> --path=<folder>` – roll back a single migration.
-- `schema:dump --output=schema.sql` – export the current database schema using `pg_dump`.
+- `schema:dump --output=schema.sql` – export the current database schema using `pg_dump`. The dump uses `CREATE OR REPLACE` and `IF NOT EXISTS` statements so it can be safely rerun without dropping existing objects.
 
 Each file should contain your SQL up statement followed by `-- ROLLBACK BELOW --` and the down statement. Only one SQL statement per section is enforced.
 
