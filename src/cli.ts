@@ -53,7 +53,18 @@ const runner = new Runner(folderPath);
       await runner.rollbackMigration(filename);
     } else if (command === 'schema:dump') {
       const output = outputArg?.split('=')[1] || 'schema.sql';
+      const resolvedOutput = path.resolve(process.cwd(), output);
+      const outputDir = path.dirname(resolvedOutput);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
       const { spawnSync } = await import('child_process');
+      const pgEnv = { ...process.env } as NodeJS.ProcessEnv;
+      if (process.env.PG_PASSWORD) {
+        pgEnv.PGPASSWORD = process.env.PG_PASSWORD;
+      }
+
       const result = spawnSync(
         'pg_dump',
         [
@@ -69,19 +80,30 @@ const runner = new Runner(folderPath);
           '-d',
           process.env.PG_DB || 'postgres',
           '-f',
-          output,
+          resolvedOutput,
         ],
         {
-          stdio: 'inherit',
-          env: { ...process.env, PGPASSWORD: process.env.PG_PASSWORD || '' },
+          env: pgEnv,
+          stdio: ['inherit', 'pipe', 'pipe'],
         },
       );
 
-      if (result.status !== 0) {
-        throw new Error('pg_dump failed');
+      if (result.stdout?.length) process.stdout.write(result.stdout);
+      if (result.stderr?.length) process.stderr.write(result.stderr);
+
+      if (result.error) {
+        throw result.error;
       }
 
-      let sql = fs.readFileSync(output, 'utf8');
+      if (result.status !== 0) {
+        const stderr = result.stderr?.toString().trim();
+        const message = stderr
+          ? `pg_dump failed with exit code ${result.status}: ${stderr}`
+          : `pg_dump failed with exit code ${result.status}`;
+        throw new Error(message);
+      }
+
+      let sql = fs.readFileSync(resolvedOutput, 'utf8');
       const replacements: [RegExp, string][] = [
         [/^CREATE TABLE /gm, 'CREATE TABLE IF NOT EXISTS '],
         [/^CREATE SEQUENCE /gm, 'CREATE SEQUENCE IF NOT EXISTS '],
@@ -101,7 +123,7 @@ const runner = new Runner(folderPath);
         (m) =>
           `DO $$ BEGIN\n${m}\nEXCEPTION WHEN duplicate_object THEN NULL;\nEND $$;`,
       );
-      fs.writeFileSync(output, sql);
+      fs.writeFileSync(resolvedOutput, sql);
       console.log(`Schema dumped to ${output}`);
     } else {
       console.log(
