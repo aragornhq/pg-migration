@@ -9,8 +9,24 @@ const client = new Client({
   ssl: process.env.PG_USE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
 });
 
-client.connect();
+let connected = false;
+
+const ensureConnected = async () => {
+  if (!connected) {
+    await client.connect();
+    connected = true;
+  }
+};
 
 export const postgres = {
-  query: (text: string, params?: any[]) => client.query(text, params),
+  query: async (text: string, params?: any[]) => {
+    await ensureConnected();
+    return client.query(text, params);
+  },
+  close: async () => {
+    if (connected) {
+      await client.end();
+      connected = false;
+    }
+  },
 };
