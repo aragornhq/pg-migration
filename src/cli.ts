@@ -3,6 +3,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { postgres } from './client';
+
 type CliConfig = {
   path?: string;
 };
@@ -20,13 +22,6 @@ const config: CliConfig = fs.existsSync(configPath)
   : {};
 const folderPath = pathArg?.split('=')[1] || config.path;
 
-if (!folderPath) {
-  console.error(
-    '❌ Error: --path=<folder> is required or must be defined in pg-migration.json',
-  );
-  process.exit(1);
-}
-
 type RunnerInstance = import('./runner').Runner;
 let runner: RunnerInstance | null = null;
 
@@ -40,6 +35,10 @@ const getRunner = async (): Promise<RunnerInstance> => {
 
 (async () => {
   try {
+    if (!folderPath) {
+      throw new Error('--path=<folder> is required or must be defined in pg-migration.json');
+    }
+
     if (command === 'migration:create') {
       if (!name) throw new Error('Missing migration name');
       const timestamp = new Date()
@@ -73,6 +72,8 @@ const getRunner = async (): Promise<RunnerInstance> => {
     }
   } catch (err) {
     console.error(`❌ ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    await postgres.close();
   }
 })();
