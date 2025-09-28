@@ -37,11 +37,17 @@ PG_PASSWORD=password
 PG_USE_SSL=false
 ```
 
-2. Specify where your migration files live via a `pg-migration.json` file:
+2. The CLI needs access to [`pg_dump`](https://www.postgresql.org/docs/current/app-pgdump.html). A cross-platform copy is bundled
+   via the [`pg-dump-restore-nodejs`](https://www.npmjs.com/package/pg-dump-restore-nodejs) dependency and will be used
+   automatically. If you prefer to use a system-installed binary, make sure it is available on your `PATH` or point the CLI to it
+   with the `PG_DUMP_PATH` environment variable or `pgDumpPath` in `pg-migration.json`.
+
+3. Specify where your migration files live via a `pg-migration.json` file:
 
 ```json
 {
-  "path": "db/migrations"
+  "path": "db/migrations",
+  "pgDumpPath": "/usr/lib/postgresql/16/bin/pg_dump"
 }
 ```
 

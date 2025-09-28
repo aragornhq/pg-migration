@@ -4,6 +4,103 @@ import { Runner } from './runner';
 import fs from 'fs';
 import path from 'path';
 
+type CliConfig = {
+  path?: string;
+  pgDumpPath?: string;
+};
+
+type PgDumpResolution = {
+  command: string;
+  envOverrides?: NodeJS.ProcessEnv;
+};
+
+const resolvePgDumpExecutable = (config: CliConfig): PgDumpResolution => {
+  const explicitPath =
+    process.env.PG_DUMP_PATH ||
+    (config.pgDumpPath ? path.resolve(process.cwd(), config.pgDumpPath) : undefined);
+
+  if (explicitPath) {
+    return { command: explicitPath };
+  }
+
+  try {
+    const packageJsonPath = require.resolve('pg-dump-restore-nodejs/package.json', {
+      paths: [process.cwd()],
+    });
+    const packageDir = path.dirname(packageJsonPath);
+    const platformDirectoryMap: Record<NodeJS.Platform, string | undefined> = {
+      aix: undefined,
+      android: undefined,
+      darwin: 'macos',
+      freebsd: undefined,
+      haiku: undefined,
+      linux: 'linux',
+      openbsd: undefined,
+      sunos: undefined,
+      win32: 'win',
+      cygwin: 'win',
+      netbsd: undefined,
+    } as const;
+    const platformDirectory = platformDirectoryMap[process.platform];
+
+    if (platformDirectory) {
+      const binaryDir = path.join(packageDir, 'bin', platformDirectory, 'bin');
+      const binaryName = process.platform === 'win32' ? 'pg_dump.exe' : 'pg_dump';
+      const binaryPath = path.join(binaryDir, binaryName);
+
+      if (fs.existsSync(binaryPath)) {
+        try {
+          const stats = fs.statSync(binaryPath);
+          const executableMask = 0o100; // Owner execute bit
+          if ((stats.mode & executableMask) === 0) {
+            fs.chmodSync(binaryPath, stats.mode | 0o755);
+          }
+        } catch (chmodError) {
+          // Ignore permission errors when adjusting executable bit
+          if (
+            chmodError &&
+            typeof chmodError === 'object' &&
+            'code' in chmodError &&
+            !['EACCES', 'EPERM', 'EROFS'].includes((chmodError as NodeJS.ErrnoException).code || '')
+          ) {
+            throw chmodError;
+          }
+        }
+
+        const envOverrides: NodeJS.ProcessEnv = {};
+        const libDir = path.join(packageDir, 'bin', platformDirectory, 'lib');
+        if (process.platform === 'linux' && fs.existsSync(libDir)) {
+          envOverrides.LD_LIBRARY_PATH = [
+            libDir,
+            process.env.LD_LIBRARY_PATH,
+          ]
+            .filter(Boolean)
+            .join(path.delimiter);
+        } else if (process.platform === 'darwin' && fs.existsSync(libDir)) {
+          envOverrides.DYLD_LIBRARY_PATH = [
+            libDir,
+            process.env.DYLD_LIBRARY_PATH,
+          ]
+            .filter(Boolean)
+            .join(path.delimiter);
+        } else if (process.platform === 'win32') {
+          envOverrides.PATH = [binaryDir, process.env.PATH].filter(Boolean).join(path.delimiter);
+        }
+
+        return { command: binaryPath, envOverrides };
+      }
+    }
+  } catch (err) {
+    if (
+      !(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND')
+    ) {
+      throw err;
+    }
+  }
+
+  return { command: 'pg_dump' };
+};
+
 const args = process.argv.slice(2);
 const command = args[0];
 const name = args[1];
@@ -12,7 +109,8 @@ const fileArg = args.find((arg) => arg.startsWith('--file='));
 const outputArg = args.find((arg) => arg.startsWith('--output='));
 
 const configPath = path.resolve(process.cwd(), 'pg-migration.json');
-const config = fs.existsSync(configPath)
+
+const config: CliConfig = fs.existsSync(configPath)
   ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
   : {};
 const folderPath = pathArg?.split('=')[1] || config.path;
@@ -60,13 +158,14 @@ const runner = new Runner(folderPath);
       }
 
       const { spawnSync } = await import('child_process');
-      const pgEnv = { ...process.env } as NodeJS.ProcessEnv;
+      const { command: pgDumpExecutable, envOverrides } = resolvePgDumpExecutable(config);
+      const pgEnv = { ...process.env, ...envOverrides } as NodeJS.ProcessEnv;
       if (process.env.PG_PASSWORD) {
         pgEnv.PGPASSWORD = process.env.PG_PASSWORD;
       }
 
       const result = spawnSync(
-        'pg_dump',
+        pgDumpExecutable,
         [
           '--schema-only',
           '--no-owner',
@@ -92,6 +191,11 @@ const runner = new Runner(folderPath);
       if (result.stderr?.length) process.stderr.write(result.stderr);
 
       if (result.error) {
+        if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new Error(
+            `pg_dump executable not found. Install PostgreSQL client tools, install the "pg-dump-restore-nodejs" package, or set PG_DUMP_PATH/pgDumpPath to the pg_dump binary. Tried "${pgDumpExecutable}".`,
+          );
+        }
         throw result.error;
       }
 
