@@ -14,7 +14,6 @@
 - ✅ Enforced one-statement-per-file (recommended)
 - ✅ Optional config via `pg-migration.json`
 - ✅ Migrations run inside a single transaction for atomicity
-- ✅ `schema:dump` command to export an existing database schema with rerunnable output
 
 ---
 
@@ -37,17 +36,11 @@ PG_PASSWORD=password
 PG_USE_SSL=false
 ```
 
-2. The CLI needs access to [`pg_dump`](https://www.postgresql.org/docs/current/app-pgdump.html). A cross-platform copy is bundled
-   via the [`pg-dump-restore-nodejs`](https://www.npmjs.com/package/pg-dump-restore-nodejs) dependency and will be used
-   automatically. If you prefer to use a system-installed binary, make sure it is available on your `PATH` or point the CLI to it
-   with the `PG_DUMP_PATH` environment variable or `pgDumpPath` in `pg-migration.json`.
-
-3. Specify where your migration files live via a `pg-migration.json` file:
+2. Specify where your migration files live via a `pg-migration.json` file:
 
 ```json
 {
-  "path": "db/migrations",
-  "pgDumpPath": "/usr/lib/postgresql/16/bin/pg_dump"
+  "path": "db/migrations"
 }
 ```
 
@@ -67,7 +60,6 @@ npx pg-migrate <command> [options]
 - `migration:up --path=<folder>` – apply all pending migrations.
 - `migration:dry-run --path=<folder>` – run migrations in a transaction and roll back for validation.
 - `migration:down --file=<filename.sql> --path=<folder>` – roll back a single migration.
-- `schema:dump --output=schema.sql` – export the current database schema using `pg_dump`. The dump uses `CREATE OR REPLACE` and `IF NOT EXISTS` statements so it can be safely rerun without dropping existing objects.
 
 Each file should contain your SQL up statement followed by `-- ROLLBACK BELOW --` and the down statement. Only one SQL statement per section is enforced.
 
