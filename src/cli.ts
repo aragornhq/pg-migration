@@ -20,12 +20,11 @@ const configPath = path.resolve(process.cwd(), 'pg-migration.json');
 const config: CliConfig = fs.existsSync(configPath)
   ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
   : {};
-const folderPath = pathArg?.split('=')[1] || config.path;
 
 type RunnerInstance = import('./runner').Runner;
 let runner: RunnerInstance | null = null;
 
-const getRunner = async (): Promise<RunnerInstance> => {
+const getRunner = async (folderPath: string): Promise<RunnerInstance> => {
   if (!runner) {
     const { Runner } = await import('./runner');
     runner = new Runner(folderPath);
@@ -35,9 +34,13 @@ const getRunner = async (): Promise<RunnerInstance> => {
 
 (async () => {
   try {
-    if (!folderPath) {
+    const folderPathValue = pathArg?.split('=')[1] ?? config.path;
+
+    if (!folderPathValue) {
       throw new Error('--path=<folder> is required or must be defined in pg-migration.json');
     }
+
+    const folderPath = folderPathValue;
 
     if (command === 'migration:create') {
       if (!name) throw new Error('Missing migration name');
@@ -55,15 +58,15 @@ const getRunner = async (): Promise<RunnerInstance> => {
       );
       console.log(`Created migration: ${filePath}`);
     } else if (command === 'migration:up') {
-      const r = await getRunner();
+      const r = await getRunner(folderPath);
       await r.applyMigrations();
     } else if (command === 'migration:dry-run') {
-      const r = await getRunner();
+      const r = await getRunner(folderPath);
       await r.dryRunMigrations();
     } else if (command === 'migration:down') {
       const filename = fileArg?.split('=')[1];
       if (!filename) throw new Error('--file=<filename> is required');
-      const r = await getRunner();
+      const r = await getRunner(folderPath);
       await r.rollbackMigration(filename);
     } else {
       console.log(
