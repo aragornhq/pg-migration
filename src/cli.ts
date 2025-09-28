@@ -6,99 +6,6 @@ import path from 'path';
 
 type CliConfig = {
   path?: string;
-  pgDumpPath?: string;
-};
-
-type PgDumpResolution = {
-  command: string;
-  envOverrides?: NodeJS.ProcessEnv;
-};
-
-const resolvePgDumpExecutable = (config: CliConfig): PgDumpResolution => {
-  const explicitPath =
-    process.env.PG_DUMP_PATH ||
-    (config.pgDumpPath ? path.resolve(process.cwd(), config.pgDumpPath) : undefined);
-
-  if (explicitPath) {
-    return { command: explicitPath };
-  }
-
-  try {
-    const packageJsonPath = require.resolve('pg-dump-restore-nodejs/package.json', {
-      paths: [process.cwd()],
-    });
-    const packageDir = path.dirname(packageJsonPath);
-    const platformDirectoryMap: Record<NodeJS.Platform, string | undefined> = {
-      aix: undefined,
-      android: undefined,
-      darwin: 'macos',
-      freebsd: undefined,
-      haiku: undefined,
-      linux: 'linux',
-      openbsd: undefined,
-      sunos: undefined,
-      win32: 'win',
-      cygwin: 'win',
-      netbsd: undefined,
-    } as const;
-    const platformDirectory = platformDirectoryMap[process.platform];
-
-    if (platformDirectory) {
-      const binaryDir = path.join(packageDir, 'bin', platformDirectory, 'bin');
-      const binaryName = process.platform === 'win32' ? 'pg_dump.exe' : 'pg_dump';
-      const binaryPath = path.join(binaryDir, binaryName);
-
-      if (fs.existsSync(binaryPath)) {
-        try {
-          const stats = fs.statSync(binaryPath);
-          const executableMask = 0o100; // Owner execute bit
-          if ((stats.mode & executableMask) === 0) {
-            fs.chmodSync(binaryPath, stats.mode | 0o755);
-          }
-        } catch (chmodError) {
-          // Ignore permission errors when adjusting executable bit
-          if (
-            chmodError &&
-            typeof chmodError === 'object' &&
-            'code' in chmodError &&
-            !['EACCES', 'EPERM', 'EROFS'].includes((chmodError as NodeJS.ErrnoException).code || '')
-          ) {
-            throw chmodError;
-          }
-        }
-
-        const envOverrides: NodeJS.ProcessEnv = {};
-        const libDir = path.join(packageDir, 'bin', platformDirectory, 'lib');
-        if (process.platform === 'linux' && fs.existsSync(libDir)) {
-          envOverrides.LD_LIBRARY_PATH = [
-            libDir,
-            process.env.LD_LIBRARY_PATH,
-          ]
-            .filter(Boolean)
-            .join(path.delimiter);
-        } else if (process.platform === 'darwin' && fs.existsSync(libDir)) {
-          envOverrides.DYLD_LIBRARY_PATH = [
-            libDir,
-            process.env.DYLD_LIBRARY_PATH,
-          ]
-            .filter(Boolean)
-            .join(path.delimiter);
-        } else if (process.platform === 'win32') {
-          envOverrides.PATH = [binaryDir, process.env.PATH].filter(Boolean).join(path.delimiter);
-        }
-
-        return { command: binaryPath, envOverrides };
-      }
-    }
-  } catch (err) {
-    if (
-      !(err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND')
-    ) {
-      throw err;
-    }
-  }
-
-  return { command: 'pg_dump' };
 };
 
 const args = process.argv.slice(2);
@@ -106,7 +13,6 @@ const command = args[0];
 const name = args[1];
 const pathArg = args.find((arg) => arg.startsWith('--path='));
 const fileArg = args.find((arg) => arg.startsWith('--file='));
-const outputArg = args.find((arg) => arg.startsWith('--output='));
 
 const configPath = path.resolve(process.cwd(), 'pg-migration.json');
 
@@ -149,89 +55,9 @@ const runner = new Runner(folderPath);
       const filename = fileArg?.split('=')[1];
       if (!filename) throw new Error('--file=<filename> is required');
       await runner.rollbackMigration(filename);
-    } else if (command === 'schema:dump') {
-      const output = outputArg?.split('=')[1] || 'schema.sql';
-      const resolvedOutput = path.resolve(process.cwd(), output);
-      const outputDir = path.dirname(resolvedOutput);
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      const { spawnSync } = await import('child_process');
-      const { command: pgDumpExecutable, envOverrides } = resolvePgDumpExecutable(config);
-      const pgEnv = { ...process.env, ...envOverrides } as NodeJS.ProcessEnv;
-      if (process.env.PG_PASSWORD) {
-        pgEnv.PGPASSWORD = process.env.PG_PASSWORD;
-      }
-
-      const result = spawnSync(
-        pgDumpExecutable,
-        [
-          '--schema-only',
-          '--no-owner',
-          '--no-privileges',
-          '-h',
-          process.env.PG_HOST || 'localhost',
-          '-p',
-          process.env.PG_PORT || '5432',
-          '-U',
-          process.env.PG_USER || 'postgres',
-          '-d',
-          process.env.PG_DB || 'postgres',
-          '-f',
-          resolvedOutput,
-        ],
-        {
-          env: pgEnv,
-          stdio: ['inherit', 'pipe', 'pipe'],
-        },
-      );
-
-      if (result.stdout?.length) process.stdout.write(result.stdout);
-      if (result.stderr?.length) process.stderr.write(result.stderr);
-
-      if (result.error) {
-        if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
-          throw new Error(
-            `pg_dump executable not found. Install PostgreSQL client tools, install the "pg-dump-restore-nodejs" package, or set PG_DUMP_PATH/pgDumpPath to the pg_dump binary. Tried "${pgDumpExecutable}".`,
-          );
-        }
-        throw result.error;
-      }
-
-      if (result.status !== 0) {
-        const stderr = result.stderr?.toString().trim();
-        const message = stderr
-          ? `pg_dump failed with exit code ${result.status}: ${stderr}`
-          : `pg_dump failed with exit code ${result.status}`;
-        throw new Error(message);
-      }
-
-      let sql = fs.readFileSync(resolvedOutput, 'utf8');
-      const replacements: [RegExp, string][] = [
-        [/^CREATE TABLE /gm, 'CREATE TABLE IF NOT EXISTS '],
-        [/^CREATE SEQUENCE /gm, 'CREATE SEQUENCE IF NOT EXISTS '],
-        [/^CREATE UNIQUE INDEX /gm, 'CREATE UNIQUE INDEX IF NOT EXISTS '],
-        [/^CREATE INDEX /gm, 'CREATE INDEX IF NOT EXISTS '],
-        [/^CREATE VIEW /gm, 'CREATE OR REPLACE VIEW '],
-        [/^CREATE FUNCTION /gm, 'CREATE OR REPLACE FUNCTION '],
-        [/^CREATE PROCEDURE /gm, 'CREATE OR REPLACE PROCEDURE '],
-        [/^CREATE TYPE /gm, 'CREATE TYPE IF NOT EXISTS '],
-        [/^CREATE SCHEMA /gm, 'CREATE SCHEMA IF NOT EXISTS '],
-      ];
-      for (const [pattern, replacement] of replacements) {
-        sql = sql.replace(pattern, replacement);
-      }
-      sql = sql.replace(
-        /CREATE TRIGGER[^;]+;/g,
-        (m) =>
-          `DO $$ BEGIN\n${m}\nEXCEPTION WHEN duplicate_object THEN NULL;\nEND $$;`,
-      );
-      fs.writeFileSync(resolvedOutput, sql);
-      console.log(`Schema dumped to ${output}`);
     } else {
       console.log(
-        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:dry-run --path=./migrations\n  migration:down --file=filename.sql --path=./migrations\n  schema:dump --output=schema.sql',
+        'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:dry-run --path=./migrations\n  migration:down --file=filename.sql --path=./migrations',
       );
     }
   } catch (err) {
