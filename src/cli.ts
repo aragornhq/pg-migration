@@ -1,6 +1,5 @@
 #!/usr/bin/env ts-node
 
-import { Runner } from './runner';
 import fs from 'fs';
 import path from 'path';
 
@@ -28,7 +27,16 @@ if (!folderPath) {
   process.exit(1);
 }
 
-const runner = new Runner(folderPath);
+type RunnerInstance = import('./runner').Runner;
+let runner: RunnerInstance | null = null;
+
+const getRunner = async (): Promise<RunnerInstance> => {
+  if (!runner) {
+    const { Runner } = await import('./runner');
+    runner = new Runner(folderPath);
+  }
+  return runner;
+};
 
 (async () => {
   try {
@@ -48,13 +56,16 @@ const runner = new Runner(folderPath);
       );
       console.log(`Created migration: ${filePath}`);
     } else if (command === 'migration:up') {
-      await runner.applyMigrations();
+      const r = await getRunner();
+      await r.applyMigrations();
     } else if (command === 'migration:dry-run') {
-      await runner.dryRunMigrations();
+      const r = await getRunner();
+      await r.dryRunMigrations();
     } else if (command === 'migration:down') {
       const filename = fileArg?.split('=')[1];
       if (!filename) throw new Error('--file=<filename> is required');
-      await runner.rollbackMigration(filename);
+      const r = await getRunner();
+      await r.rollbackMigration(filename);
     } else {
       console.log(
         'Usage:\n  migration:create <name> --path=./migrations\n  migration:up --path=./migrations\n  migration:dry-run --path=./migrations\n  migration:down --file=filename.sql --path=./migrations',
