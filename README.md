@@ -11,7 +11,7 @@
 - ✅ Supports `migration:create`, `migration:up`, `migration:down`
 - ✅ Rollback support using `-- ROLLBACK BELOW --` separator
 - ✅ SHA-256 hash tracking for applied migrations
-- ✅ Enforced one-statement-per-file (recommended)
+- ✅ Multiple statements per migration (up and rollback) in a single file
 - ✅ Optional config via `pg-migration.json`
 - ✅ Migrations run inside a single transaction for atomicity
 
@@ -61,13 +61,15 @@ npx pg-migrate <command> [options]
 - `migration:dry-run --path=<folder>` – run migrations in a transaction and roll back for validation.
 - `migration:down --file=<filename.sql> --path=<folder>` – roll back a single migration.
 
-Each file should contain your SQL up statement followed by `-- ROLLBACK BELOW --` and the down statement. Only one SQL statement per section is enforced.
+Each file should contain your SQL up section followed by `-- ROLLBACK BELOW --` and the down section. Multiple statements are allowed in both sections and will be run sequentially.
 
 ```sql
 -- 20250101_create_table.sql
 CREATE TABLE example (id SERIAL PRIMARY KEY);
+CREATE INDEX idx_example_id ON example (id);
 
 -- ROLLBACK BELOW --
+DROP INDEX idx_example_id;
 DROP TABLE example;
 ```
 

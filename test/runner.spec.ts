@@ -34,17 +34,21 @@ describe('Migration Runner', () => {
   const testDir = path.join(__dirname, 'fixtures');
   const runner = new Runner(testDir);
   let expectedHash = '';
+  const migrationFile = path.join(testDir, '20250101_test.sql');
 
   beforeAll(() => {
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir);
     }
-    const file = path.join(testDir, '20250101_test.sql');
-    fs.writeFileSync(
-      file,
-      `CREATE TABLE test (id SERIAL);\n-- ROLLBACK BELOW --\nDROP TABLE test;`
-    );
-    const raw = fs.readFileSync(file, 'utf8');
+    const fileContents = [
+      'CREATE TABLE test (id SERIAL);',
+      'CREATE INDEX idx_test_id ON test (id);',
+      '-- ROLLBACK BELOW --',
+      'DROP INDEX idx_test_id;',
+      'DROP TABLE test;',
+    ].join('\n');
+    fs.writeFileSync(migrationFile, fileContents);
+    const raw = fs.readFileSync(migrationFile, 'utf8');
     expectedHash = crypto.createHash('sha256').update(raw).digest('hex');
   });
 
@@ -53,14 +57,15 @@ describe('Migration Runner', () => {
   });
 
   afterAll(() => {
-    const file = path.join(testDir, '20250101_test.sql');
-    fs.unlinkSync(file);
+    fs.unlinkSync(migrationFile);
     fs.rmdirSync(testDir);
   });
 
   it('applies migrations', async () => {
     await expect(runner.applyMigrations()).resolves.not.toThrow();
     expect(postgres.query).toHaveBeenCalledWith('BEGIN');
+    expect(postgres.query).toHaveBeenCalledWith('CREATE TABLE test (id SERIAL)');
+    expect(postgres.query).toHaveBeenCalledWith('CREATE INDEX idx_test_id ON test (id)');
     expect(postgres.query).toHaveBeenCalledWith(
       'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
       ['20250101_test.sql', expectedHash]
@@ -70,6 +75,8 @@ describe('Migration Runner', () => {
 
   it('rolls back migration', async () => {
     await expect(runner.rollbackMigration('20250101_test.sql')).resolves.not.toThrow();
+    expect(postgres.query).toHaveBeenCalledWith('DROP INDEX idx_test_id');
+    expect(postgres.query).toHaveBeenCalledWith('DROP TABLE test');
     expect(postgres.query).toHaveBeenCalledWith(
       'DELETE FROM migrations WHERE filename = $1',
       ['20250101_test.sql']
