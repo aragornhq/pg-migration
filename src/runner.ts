@@ -30,13 +30,9 @@ export class Runner {
         if (!applied.has(file.filename)) {
           console.log(`🚀 Applying ${file.filename}...`);
 
-          if ((file.upSql.match(/;/g) || []).length > 1) {
-            throw new Error(
-              `❌ Migration ${file.filename} may contain multiple SQL statements. Use 1 per file.`,
-            );
+          for (const statement of file.upSql) {
+            await postgres.query(statement);
           }
-
-          await postgres.query(file.upSql);
 
           await postgres.query(
             'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
@@ -67,13 +63,9 @@ export class Runner {
         if (!applied.has(file.filename)) {
           console.log(`🧪 Testing ${file.filename}...`);
 
-          if ((file.upSql.match(/;/g) || []).length > 1) {
-            throw new Error(
-              `❌ Migration ${file.filename} may contain multiple SQL statements. Use 1 per file.`,
-            );
+          for (const statement of file.upSql) {
+            await postgres.query(statement);
           }
-
-          await postgres.query(file.upSql);
 
           await postgres.query(
             'INSERT INTO migrations (filename, hash) VALUES ($1, $2)',
@@ -99,10 +91,12 @@ export class Runner {
     const file = files.find((f) => f.filename === filename);
 
     if (!file) throw new Error(`Migration file not found: ${filename}`);
-    if (!file.downSql) throw new Error(`No rollback SQL found in ${filename}`);
+    if (!file.downSql?.length) throw new Error(`No rollback SQL found in ${filename}`);
 
     console.log(`↩️ Rolling back ${filename}...`);
-    await postgres.query(file.downSql);
+    for (const statement of file.downSql) {
+      await postgres.query(statement);
+    }
 
     await postgres.query('DELETE FROM migrations WHERE filename = $1', [filename]);
 
