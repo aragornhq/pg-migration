@@ -36,6 +36,9 @@ PG_PASSWORD=password
 PG_USE_SSL=false
 ```
 
+Set `PG_USE_SSL=true` (or `1` / `require`) for hosted PostgreSQL providers that require encrypted connections. If PostgreSQL reports `no pg_hba.conf entry ... SSL off`, SSL is required for that connection and this variable should be enabled.
+
+
 2. Specify where your migration files live via a `pg-migration.json` file:
 
 ```json
